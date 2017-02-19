@@ -1,4 +1,6 @@
-#include "headers.h"
+#include "cumath.cuh"
+
+#define K_SIZE 3
 
 __global__ void threshold(uchar *input, size_t inputPitch, int imageRows, int imageCols, uchar *output, size_t outputPitch, uchar thresholdValue) {
     int row = blockDim.y*blockIdx.y + threadIdx.y;
@@ -17,9 +19,8 @@ __global__ void threshold(uchar *input, size_t inputPitch, int imageRows, int im
 }
 
 extern "C"
-cudaError_t cudaThreshold(cv::Mat & input, cv::Mat & output, uchar thresholdValue) {
+void cudaThreshold(cv::Mat & input, cv::Mat & output, uchar thresholdValue) {
     output = cv::Mat(input.size(), CV_8U, cv::Scalar(0));
-    cudaError_t cudaStatus;
 
     // make sure the image is a gray image
     if (input.type() != CV_8U) {
@@ -30,32 +31,30 @@ cudaError_t cudaThreshold(cv::Mat & input, cv::Mat & output, uchar thresholdValu
     size_t inputPitch, outputPitch;
 
     // get pitch
-    cudaStatus = cudaMallocPitch(&d_input, &inputPitch, sizeof(uchar)*input.cols, input.rows);
-    cudaStatus = cudaMallocPitch(&d_output, &outputPitch, sizeof(uchar)*output.cols, output.rows);
+    CUDA_CALL(cudaMallocPitch(&d_input, &inputPitch, sizeof(uchar)*input.cols, input.rows));
+    CUDA_CALL(cudaMallocPitch(&d_output, &outputPitch, sizeof(uchar)*output.cols, output.rows));
 
     // use stream to accelerate copy operation
     cudaStream_t inputCopy, outputCopy;
-    cudaStatus = cudaStreamCreate(&inputCopy); cudaStatus = cudaStreamCreate(&outputCopy);
+    CUDA_CALL(cudaStreamCreate(&inputCopy)); CUDA_CALL(cudaStreamCreate(&outputCopy));
 
     // copy data to device
-    cudaStatus = cudaMemcpy2DAsync(d_input, inputPitch, input.data, sizeof(uchar)*input.cols, sizeof(uchar)*input.cols, input.rows, cudaMemcpyHostToDevice, inputCopy);
-    cudaStatus = cudaMemcpy2DAsync(d_output, outputPitch, output.data, sizeof(uchar)*output.cols, sizeof(uchar)*output.cols, output.rows, cudaMemcpyHostToDevice, outputCopy);
+    CUDA_CALL(cudaMemcpy2DAsync(d_input, inputPitch, input.data, sizeof(uchar)*input.cols, sizeof(uchar)*input.cols, input.rows, cudaMemcpyHostToDevice, inputCopy));
+    CUDA_CALL(cudaMemcpy2DAsync(d_output, outputPitch, output.data, sizeof(uchar)*output.cols, sizeof(uchar)*output.cols, output.rows, cudaMemcpyHostToDevice, outputCopy));
 
     // block until data copy is complete
-    cudaStatus = cudaStreamSynchronize(inputCopy); cudaStatus = cudaStreamSynchronize(outputCopy);
+    CUDA_CALL(cudaStreamSynchronize(inputCopy)); CUDA_CALL(cudaStreamSynchronize(outputCopy));
 
     // define block size and
     dim3 blockSize(input.cols / MAX_THREADS + 1, input.rows / MAX_THREADS + 1);
     dim3 threadSize(MAX_THREADS, MAX_THREADS);
 
     threshold <<<blockSize, threadSize>>> (d_input, inputPitch, input.rows, input.cols, d_output, outputPitch, thresholdValue);
-    cudaStatus = cudaDeviceSynchronize();
+    CUDA_CALL(cudaDeviceSynchronize());
 
-    cudaStatus = cudaMemcpy2D(output.data, sizeof(uchar)*output.cols, d_output, outputPitch, sizeof(uchar)*output.cols, output.rows, cudaMemcpyDeviceToHost);
+    CUDA_CALL(cudaMemcpy2D(output.data, sizeof(uchar)*output.cols, d_output, outputPitch, sizeof(uchar)*output.cols, output.rows, cudaMemcpyDeviceToHost));
 
     // resource releasing
     cudaStreamDestroy(inputCopy); cudaStreamDestroy(outputCopy);
     cudaFree(d_input); cudaFree(d_output);
-
-    return cudaStatus;
 }

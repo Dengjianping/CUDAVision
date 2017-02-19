@@ -1,19 +1,4 @@
-#include <iostream>
-#include <cuda_runtime.h>
-#include <device_launch_parameters.h>
-#include <opencv2/core.hpp>
-#include <opencv2/imgproc.hpp>
-
-#define CUDA_CALL(x) {const cudaError_t a = (x); if (a != cudaSuccess) { std::cout << std::endl << "CUDA Error: " << cudaGetErrorString(a) << ", error number: " << a << std::endl; cudaDeviceReset(); assert(0);}}
-#define MAX_THREADS 32
-
-__constant__ float PI = 3.1415;
-
-__device__ float twoDimGaussian(int x, int y, float theta) {
-    float coeffient = 1 / (2 * PI*powf(theta, 2));
-    float powerIndex = -(powf(x, 2) + powf(y, 2)) / (2 * powf(theta, 2));
-    return coeffient*expf(powerIndex);
-}
+#include "cumath.cuh"
 
 __global__ void gaussianBlur(float *input, size_t inputPitch, int imageRows, int imageCols, float *output, size_t outputPitch, int radius, float theta = 1.0) {
     // use a 1-dim array to store gaussian matrix

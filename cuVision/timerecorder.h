@@ -7,7 +7,7 @@ public:
     DeviceTimeRecorder();
     void startRecord();
     void stopRecord();
-    float timeCost();
+    float timeCost(); // ms
     ~DeviceTimeRecorder();
 };
 
@@ -61,7 +61,7 @@ void HostTimeRecorder::stopRecord() {
 }
 
 double HostTimeRecorder::timeCost() {
-    return (end - start) / cv::getTickFrequency();
+    return (end - start) / cv::getTickFrequency() * 1000; // ms
 }
 
 HostTimeRecorder::~HostTimeRecorder() {

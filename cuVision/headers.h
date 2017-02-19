@@ -1,7 +1,6 @@
-#ifndef HEADERS_H_
-#define HEADERS_H_
+#ifndef HEADERS_H
+#define HEADERS_H
 
-#define MAX_THREADS 32
 // std include files
 #include <iostream>
 #include <string>
@@ -17,4 +16,8 @@
 #include <opencv2/highgui.hpp>
 #include <opencv2/imgproc.hpp>
 
-#endif // !HEADERS_H_
+// python include files
+#include <Python.h>
+
+
+#endif // !HEADERS_H

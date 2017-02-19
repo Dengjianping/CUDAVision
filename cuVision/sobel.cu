@@ -1,14 +1,5 @@
-#include <iostream>
+#include "cumath.cuh"
 
-#include "cuda_runtime.h"
-#include "device_launch_parameters.h"
-
-#include <opencv2\core.hpp>
-#include <opencv2\highgui.hpp>
-#include <opencv2\imgproc.hpp>
-
-#define CUDA_CALL(x) {const cudaError_t a = (x); if (a != cudaSuccess) { std::cout << std::endl << "CUDA Error: " << cudaGetErrorString(a) << ", error number: " << a << std::endl; cudaDeviceReset(); assert(0);}}
-#define MAX_THREADS 32
 #define K_SIZE 3
 
 __constant__ char sobelKernelXC[K_SIZE][K_SIZE] = { { -1.0,0.0,1.0 },{ -2.0,0.0,2.0 },{ -1.0,0.0,1.0 } };
@@ -24,16 +15,16 @@ __global__ void sobel(uchar *input, int rows, int cols, size_t inputPitch, uchar
             for (size_t j = 0; j < K_SIZE; j++) {
                 uchar *inputValue = (uchar*)((char*)input + row*inputPitch) + col;
                 // convolving gx
-                uchar *gxValue = (uchar*)((char*)gx + (row + i - K_SIZE / 2)*outputPitch) + (col + j - K_SIZE / 2);
+                uchar *gxValue = (uchar*)((char*)gx + (row + i - K_SIZE / 2)*gxPitch) + (col + j - K_SIZE / 2);
                 *gxValue += sobelKernelXC[i][j] * (*inputValue);
 
                 // convolving gy
-                uchar *gyValue = (uchar*)((char*)gy + (row + i - K_SIZE / 2)*outputPitch) + (col + j - K_SIZE / 2);
+                uchar *gyValue = (uchar*)((char*)gy + (row + i - K_SIZE / 2)*gyPitch) + (col + j - K_SIZE / 2);
                 *gyValue += sobelKernelYC[i][j] * (*inputValue);
         }
 
-        uchar *gxValue = (uchar*)((char*)gx + row*outputPitch) + col;
-        uchar *gyValue = (uchar*)((char*)gy + row*outputPitch) + col;
+        uchar *gxValue = (uchar*)((char*)gx + row*gxPitch) + col;
+        uchar *gyValue = (uchar*)((char*)gy + row*gyPitch) + col;
         uchar *outputValue = (uchar*)((char*)output + row*outputPitch) + col;
         *outputValue = *gxValue + *gyValue;
     }
@@ -68,8 +59,8 @@ void cudaSobel(cv::Mat & input, cv::Mat & output) {
     my sample image size is 600 * 450, so we need 600 * 450 threads to process this image on device at least,
     each block can contain 1024 threads at most in my device, so ,I can define block size as 600 * 450 / 1024 = 263 (20 * 15)
     */
-    dim3 blockSize(input.cols / MAX_THREADS + 1, input.rows / MAX_THREADS + 1);
-    dim3 threadSize(MAX_THREADS, MAX_THREADS);
+    dim3 blockSize(input.cols / (MAX_THREADS/2) + 1, input.rows / (MAX_THREADS / 2) + 1);
+    dim3 threadSize(MAX_THREADS/2, MAX_THREADS/2);
 
     sobel<<<blockSize, threadSize>>>(d_input, input.rows, input.cols, inputPitch, gx, gxPitch, gy, gyPitch, d_output, outputPitch);
     CUDA_CALL(cudaDeviceSynchronize());

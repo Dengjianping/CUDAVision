@@ -71,12 +71,12 @@
   </PropertyGroup>
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">
     <LinkIncremental>true</LinkIncremental>
-    <IncludePath>C:\Program Files\opencv\build\include;C:\Program Files\opencv\build\include\opencv;C:\Program Files\opencv\build\include\opencv2;$(IncludePath)</IncludePath>
-    <LibraryPath>C:\Program Files\opencv\build\x64\vc14\lib;$(LibraryPath)</LibraryPath>
+    <IncludePath>C:\Program Files\opencv\build\include;C:\Program Files\opencv\build\include\opencv;C:\Program Files\opencv\build\include\opencv2;C:\Program Files\Python35\include;$(IncludePath)</IncludePath>
+    <LibraryPath>C:\Program Files\opencv\build\x64\vc14\lib;C:\Program Files\Python35\libs;$(LibraryPath)</LibraryPath>
   </PropertyGroup>
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Release|x64'">
-    <IncludePath>C:\Program Files\opencv\build\include;C:\Program Files\opencv\build\include\opencv;C:\Program Files\opencv\build\include\opencv2;$(IncludePath)</IncludePath>
-    <LibraryPath>C:\Program Files\opencv\build\x64\vc14\lib;$(LibraryPath)</LibraryPath>
+    <IncludePath>C:\Program Files\opencv\build\include;C:\Program Files\opencv\build\include\opencv;C:\Program Files\opencv\build\include\opencv2;C:\Program Files\Python35\include;$(IncludePath)</IncludePath>
+    <LibraryPath>C:\Program Files\opencv\build\x64\vc14\lib;C:\Program Files\Python35\libs;$(LibraryPath)</LibraryPath>
   </PropertyGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">
     <ClCompile>
@@ -111,6 +111,7 @@ copy "$(CudaToolkitBinDir)\cudart*.dll" "$(OutDir)"</Command>
     </PostBuildEvent>
     <CudaCompile>
       <TargetMachinePlatform>64</TargetMachinePlatform>
+      <AdditionalOptions>--keep %(AdditionalOptions)</AdditionalOptions>
     </CudaCompile>
   </ItemDefinitionGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">
@@ -157,21 +158,30 @@ copy "$(CudaToolkitBinDir)\cudart*.dll" "$(OutDir)"</Command>
     </CudaCompile>
   </ItemDefinitionGroup>
   <ItemGroup>
+    <CudaCompile Include="affine.cu" />
     <CudaCompile Include="dilate.cu" />
     <CudaCompile Include="erode.cu" />
     <CudaCompile Include="gaussianblur.cu" />
+    <CudaCompile Include="harriscorner.cu" />
+    <CudaCompile Include="improvement.cu" />
     <CudaCompile Include="laplacetransform.cu" />
     <CudaCompile Include="sobel.cu" />
     <CudaCompile Include="threshold.cu" />
+    <CudaCompile Include="usm.cu" />
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="cumath.cuh" />
     <ClInclude Include="headers.h" />
     <ClInclude Include="core.h" />
     <ClInclude Include="timerecorder.h" />
+    <ClInclude Include="utilities.h" />
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="main.cpp" />
+    <ClCompile Include="trial.h" />
+  </ItemGroup>
+  <ItemGroup>
+    <None Include="3d.py" />
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
   <ImportGroup Label="ExtensionTargets">
