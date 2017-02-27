@@ -1,12 +1,7 @@
 #ifndef CORE_H
 #define CORE_H
 
-#include <cuda_runtime.h>
-#include <device_launch_parameters.h>
-
-#include <opencv2/core.hpp>
-#include <opencv2/highgui.hpp>
-#include <opencv2/imgproc.hpp>
+#include "headers.h"
 
 namespace cucv {
     extern "C"
@@ -32,6 +27,12 @@ namespace cucv {
 
     extern "C"
         void cudaUSMColor(cv::Mat & input, cv::Mat & output, int radius, float theta = 1.0, float weight = 0.6);
+
+    extern "C"
+        void cudaHarrisCorner(cv::Mat & input, cv::Mat & output, int radius, float theta, float k, float repression, int window);
+
+    extern "C"
+        void cudaCanny(cv::Mat & input, cv::Mat & output, float radius, float theta, int window);
 }
 
 #endif // !CORE_H

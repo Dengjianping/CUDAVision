@@ -9,6 +9,7 @@
 #include <stdio.h>
 
 // cuda include files
+#include <cuda.h>
 #include <cuda_runtime.h>
 #include <device_launch_parameters.h>
 

@@ -21,7 +21,19 @@ inline __device__ void convolve1D(int threadRow, int threadCol, type *input, siz
 
 // convolve matrix
 template <typename type>
-inline __device__ void convolve2D(int threadRow, int threadCol, type *input, int inputRow, int inputCol, size_t inputPitch, int kernelSize, type *kernel, type *output, size_t outputPitch, shape mode);
+inline __device__ void convolve2D(type *input, int height, int width, size_t pitch, type *kernel, int kernelSize, type *output, shape mode) {
+    int row = blockDim.y*blockIdx.y + threadIdx.y;
+    int col = blockDim.x*blockIdx.x + threadIdx.x;
+
+    if (row < height&&col < width) {
+        for (size_t i = 0; i < kernelSize; i++)
+            for (size_t j = 0; j < kernelSize; j++) {
+                type *inputElement = (type*)((char*)input + row*pitch) + col;
+                type *outputElement = (type*)((char*)output + row*pitch) + col;
+                *outputElement += (*inputElement)*kernel[i*kernel + j];
+            }
+    }
+}
 
 // deconvolve 1-dim array
 inline __device__ void deconvolve1D();

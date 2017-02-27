@@ -20,15 +20,52 @@ Ixy=Iyx convolutional kenrel: [1,-1;
 
 __constant__ float LX[COL][ROW] = { { 1,-1 } };
 __constant__ float LY[ROW][COL] = { {1},{-1} };
-__constant__ float P = 3.1415;
 
+struct CornerPoint{
+    int x;
+    int y;
+    CornerPoint() {
+        x = y = 0;
+    }
+};
 
-__global__ void harriscornel(float *d_input, size_t inputPitch, int rows, int cols, int radius, float theta, float *lx, float *ly, float *lxy, float *sxx, float *syy, float *sxy, float *d_output, size_t outputPitch) {
+__device__ float trace(float *xx, float *yy) {
+    return *xx + *yy;
+}
+
+__device__ float det(float *xx, float *xy, float *yy) {
+    return (*xx)*(*yy) - powf(*xy, 2);
+}
+
+__device__ float repressionValue(int row, int col, int window, float *xx, float *xy, float *yy, size_t pitch, float k) {
+    float *Sxx = (float*)((char*)xx + row*pitch) + col;
+    float *Sxy = (float*)((char*)xy + row*pitch) + col;
+    float *Syy = (float*)((char*)yy + row*pitch) + col;
+    return  det(Sxx, Sxy, Syy) - k*powf(trace(Sxx, Syy), 2);
+}
+
+__device__ float localMaxRepression(int row, int col, int window, float *xx, float *xy, float *yy, size_t pitch, float k) {
+    float max = 0;
+    for (int i = -window / 2; i <= window / 2; i++) {
+        for (int j = -window / 2; j <= window / 2; j++) {
+            float *Sxx = (float*)((char*)xx + (row + i)*pitch) + (col + j);
+            float *Sxy = (float*)((char*)xy + (row + i)*pitch) + (col + j);
+            float *Syy = (float*)((char*)yy + (row + i)*pitch) + (col + j);
+            float r = det(Sxx, Sxy, Syy) - k*powf(trace(Sxx, Syy), 2);
+            if (max < r)max = r;
+        }
+    }
+    return max;
+}
+
+__global__ void harriscornel(float *d_input, size_t pitch, int heigth, int width, int radius, float theta, 
+                             float k, float repression, int window, float *d_maxR, CornerPoint *d_points,
+                             float *lx, float *ly, float *lxy, float *sxx, float *syy, float *sxy, float *d_output) {
     int row = blockDim.y*blockIdx.y + threadIdx.y;
     int col = blockDim.x*blockIdx.x + threadIdx.x;
 
     extern __shared__ float kernel[];
-    if (row < rows&&col < cols) {
+    if (row < heigth&&col < width) {
         // load gaussian kernel to shared memory
         if (row < 2 * radius + 1 && col < 2 * radius + 1) {
             kernel[row*(2 * radius + 1) + col] = twoDimGaussian(col - radius, radius - row, theta);
@@ -38,8 +75,8 @@ __global__ void harriscornel(float *d_input, size_t inputPitch, int rows, int co
         // get first differential matrix from x direction
         for (size_t i = 0; i < COL; i++)
             for (size_t j = 0; j < ROW; j++) {
-                float *input = (float*)((char*)d_input + row *inputPitch) + col;
-                float *x = (float*)((char*)lx + (row + i - COL / 2) *outputPitch) + (col + j - ROW / 2);
+                float *input = (float*)((char*)d_input + row *pitch) + col;
+                float *x = (float*)((char*)lx + (row + i - COL / 2) *pitch) + (col + j - ROW / 2);
                 *x += (*input)*LX[i][j];
                 //float *y = (float*)((char*)ly + row *outputPitch) + col;
                 //float *input = (float*)((char*)d_input + (row + i - COL / 2)*inputPitch) + (col + j - ROW / 2);
@@ -49,16 +86,16 @@ __global__ void harriscornel(float *d_input, size_t inputPitch, int rows, int co
         // get first differential matrix from y direction
         for (size_t i = 0; i < ROW; i++)
             for (size_t j = 0; j < COL; j++) {
-                float *input = (float*)((char*)d_input + row *inputPitch) + col;
-                float *y = (float*)((char*)ly + (row + i - ROW / 2) *outputPitch) + (col + j - COL / 2);
+                float *input = (float*)((char*)d_input + row *pitch) + col;
+                float *y = (float*)((char*)ly + (row + i - ROW / 2) *pitch) + (col + j - COL / 2);
                 *y += (*input)*LY[i][j];
                 //float *y = (float*)((char*)ly + row *outputPitch) + col;
                 //float *input = (float*)((char*)d_input + (row + i - COL / 2)*inputPitch) + (col + j - ROW / 2);
             }
        
-        float *Ix = (float*)((char*)lx + row*outputPitch) + col;
-        float *Iy = (float*)((char*)ly + row*outputPitch) + col;
-        float *Ixy = (float*)((char*)lxy + row*outputPitch) + col;
+        float *Ix = (float*)((char*)lx + row*pitch) + col;
+        float *Iy = (float*)((char*)ly + row*pitch) + col;
+        float *Ixy = (float*)((char*)lxy + row*pitch) + col;
         *Ixy = *Ix*(*Iy); // get Ixy
         *Ix = powf(*Ix, 2); // get Ix^2
         *Iy = powf(*Iy, 2); // get Iy^2  
@@ -66,31 +103,115 @@ __global__ void harriscornel(float *d_input, size_t inputPitch, int rows, int co
         // convolve diffierential matrix with gaussian matrix
         for (size_t i = 0; i < 2 * radius + 1; i++)
             for (size_t j = 0; j < 2 * radius + 1; j++) {
-            }
-
-        for (size_t i = 0; i < 2 * radius + 1; i++)
-            for (size_t j = 0; j < 2 * radius + 1; j++) {
                 // blur Ix^2
-                float *Sxx = (float*)((char*)sxx + (row + i - radius)*outputPitch) + (col + j - radius);
+                float *Sxx = (float*)((char*)sxx + (row + i - radius)*pitch) + (col + j - radius);
                 *Sxx += (*Ix)*kernel[i*(2 * radius + 1) + j];
 
                 // blur Iy^2
-                float *Sxy = (float*)((char*)sxy + (row + i - radius)*outputPitch) + (col + j - radius);
+                float *Sxy = (float*)((char*)sxy + (row + i - radius)*pitch) + (col + j - radius);
                 *Sxy += (*Ixy)*kernel[i*(2 * radius + 1) + j];
 
                 // blur Ixy
-                float *Syy = (float*)((char*)syy + (row + i - radius)*outputPitch) + (col + j - radius);
+                float *Syy = (float*)((char*)syy + (row + i - radius)*pitch) + (col + j - radius);
                 *Syy += (*Iy)*kernel[i*(2 * radius + 1) + j];
             }
 
+        // find max repression value in whole image
+        float *Sxx = (float*)((char*)sxx + row*pitch) + col;
+        float *Sxy = (float*)((char*)sxy + row*pitch) + col;
+        float *Syy = (float*)((char*)syy + row*pitch) + col;
+        float r = det(Sxx, Sxy, Syy) - k*powf(trace(Sxx, Syy), 2);
+        if (*d_maxR < r)*d_maxR = 100;
+        *d_maxR = 100;
+        __syncthreads();
 
+        // core part
+        if ((row > window - 1 && row < heigth - window / 2) && (col > window - 1 && col < width - window / 2)) {
+            float r = repressionValue(row, col, window, sxx, sxy, syy, pitch, k);
+            if (r > repression*(*d_maxR) && r > localMaxRepression(row, col, window, sxx, sxy, syy, pitch, k)) {
+                d_points[row*width+col].x = row; d_points[row*width + col].y = col;
+            }
+            else {
+                d_points[row*width + col].x = 0; d_points[row*width + col].y = 0;
+            }
+        }
     }
 }
 
 extern "C"
-void cudaHarrisCorner(cv::Mat & input, cv::Mat & output) {
-    input.convertTo(input, CV_32FC3);
+void cudaHarrisCorner(cv::Mat & input, cv::Mat & output, int radius, float theta, float k, float repression, int window) {
+    input.convertTo(input, CV_32F);
     output = cv::Mat(input.size(), input.type(), cv::Scalar(0, 0, 0));
 
-    float *d_input, *lx, *ly, *d_output;
+    const int N = 8;
+    float *d_input, *lx, *ly, *lxy, *sxx, *syy, *sxy, *d_output;
+    size_t size = input.rows*input.cols*sizeof(CornerPoint);
+    std::cout << size << std::endl;
+    CornerPoint *h_points = new CornerPoint[input.rows*input.cols], *d_points; // record corner points
+
+    cudaMallocPitch(&d_input, &size, sizeof(float)*input.cols, input.rows);
+    cudaMallocPitch(&lx, &size, sizeof(float)*input.cols, input.rows);
+    cudaMallocPitch(&ly, &size, sizeof(float)*input.cols, input.rows);
+    cudaMallocPitch(&lxy, &size, sizeof(float)*input.cols, input.rows);
+    cudaMallocPitch(&sxx, &size, sizeof(float)*input.cols, input.rows);
+    cudaMallocPitch(&syy, &size, sizeof(float)*input.cols, input.rows);
+    cudaMallocPitch(&sxy, &size, sizeof(float)*input.cols, input.rows);
+    cudaMallocPitch(&d_output, &size, sizeof(float)*input.cols, input.rows);
+    
+
+    float *d_maxR, *h_maxR;
+    cudaDeviceProp prop;
+    cudaGetDeviceProperties(&prop, 0);
+    if (!prop.canMapHostMemory) {
+        std::cout << "cannot support map memory" << std::endl;
+        return;
+    }
+    cudaHostAlloc(&h_points, size, cudaHostAllocMapped);
+    cudaHostAlloc(&h_maxR, sizeof(float), cudaHostAllocMapped);
+    /*for (size_t i = 0; i < input.rows*input.cols; i++) {
+        h_points[i] = *(new CornerPoint());
+    }*/
+    *h_maxR = 0;
+    std::cout << h_points[0].x << std::endl;
+    cudaHostGetDevicePointer(&d_points, h_points, 0);
+    cudaHostGetDevicePointer(&d_maxR, h_maxR, 0);
+
+    cudaStream_t *streams = new cudaStream_t[N];
+    for (size_t i = 0; i < N; i++) cudaStreamCreate(&streams[i]);
+
+    size_t pitch = input.step;
+    cudaMemcpy2DAsync(d_input, pitch, input.data, pitch, pitch, input.rows, cudaMemcpyHostToDevice, streams[0]);
+    cudaMemcpy2DAsync(lx, pitch, output.data, pitch, pitch, input.rows, cudaMemcpyHostToDevice, streams[1]);
+    cudaMemcpy2DAsync(ly, pitch, output.data, pitch, pitch, input.rows, cudaMemcpyHostToDevice, streams[2]);
+    cudaMemcpy2DAsync(lxy, pitch, output.data, pitch, pitch, input.rows, cudaMemcpyHostToDevice, streams[3]);
+    cudaMemcpy2DAsync(sxx, pitch, output.data, pitch, pitch, input.rows, cudaMemcpyHostToDevice, streams[4]);
+    cudaMemcpy2DAsync(syy, pitch, output.data, pitch, pitch, input.rows, cudaMemcpyHostToDevice, streams[5]);
+    cudaMemcpy2DAsync(sxy, pitch, output.data, pitch, pitch, input.rows, cudaMemcpyHostToDevice, streams[6]);
+    cudaMemcpy2DAsync(d_output, pitch, output.data, pitch, pitch, input.rows, cudaMemcpyHostToDevice, streams[7]);
+
+    for (size_t i = 0; i < N; i++) cudaStreamSynchronize(streams[i]);
+
+    dim3 blockSize(input.cols / MAX_THREADS + 1, input.rows / MAX_THREADS + 1);
+    dim3 threadSize(MAX_THREADS, MAX_THREADS);
+
+    
+    harriscornel<<<blockSize, threadSize>>> (d_input, pitch, input.rows, input.cols, radius, theta, k, repression, window, d_maxR, d_points, lx, ly, lxy, sxx, syy, sxy, d_output);
+    cudaDeviceSynchronize();
+    std::cout <<  "max r" << *h_maxR << std::endl;
+
+    //cudaMemcpy2D(output.data, pitch, d_output, pitch, pitch, input.rows, cudaMemcpyDeviceToHost);
+    for (size_t i = 0; i < input.rows; i++) 
+        for (size_t j = 0; j < input.cols; j++){
+            int t = i*input.cols + j;
+            //std::cout << t  << ", " << i << ", " << j << std::endl;
+            
+            if (h_points[t].x != 0 && h_points[t].y != 0) {
+                std::cout << h_points[t].x << ", " << h_points[t].y << std::endl;
+                input.at<uchar>(h_points[t].x, h_points[t].y) = 255;
+        }
+    }
+        
+    cudaFree(d_input); cudaFree(lx); cudaFree(ly);cudaFree(sxx);cudaFree(syy);cudaFree(sxy); cudaFree(d_input); cudaFree(lxy);
+    cudaFreeHost(h_points);
+    for (size_t i = 0; i < N; i++) cudaStreamDestroy(streams[i]);
 }
