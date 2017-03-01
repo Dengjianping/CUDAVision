@@ -5,19 +5,22 @@
 
 #define SIZE 256
 
-__global__ void histogram(uchar *d_input, int in_height, int in_width, size_t in_pitch, uchar *d_output, size_t out_pitch, uchar *counter) {
+__global__ void histogram(uchar *d_input, int in_height, int in_width, size_t in_pitch, uchar *d_output, size_t out_pitch, int *counter, int sum=0) {
     int row = blockDim.y*blockIdx.y + threadIdx.y;
     int col = blockDim.x*blockIdx.x + threadIdx.x;
 
     if (row < in_height&&col < in_width) {
         uchar *in_pixel = (uchar*)((char*)d_input + row*in_pitch) + col;
-        counter[*in_pixel]++;
+        int index = (int)(*in_pixel);
+        counter[index]++;
     }
-    if (row < SIZE&&col < SIZE) {
+    
+    //if (row < SIZE&&col < SIZE) {
+    if (21 < col < 279) {
         //uchar *out_pixel = (uchar*)((char*)d_input + row*out_pitch) + col;
-        int hist = counter[row];
+        int hist = counter[col];
         for (size_t i = 0; i < hist; i++) {
-            uchar *out_pixel = (uchar*)((char*)d_input + row*out_pitch) + i;
+            uchar *out_pixel = (uchar*)((char*)d_output + (299-i)*out_pitch) + col;
             *out_pixel = 0;
         }
     }
@@ -33,11 +36,11 @@ void cudaHistogram(cv::Mat & input, cv::Mat & output) {
     cudaMallocPitch(&d_output, &out_pitch, sizeof(uchar)*output.cols, output.rows);
 
     // store counters for each pixel
-    static uchar temp[256];
-    uchar *counter;
-    cudaMalloc(&counter, sizeof(uchar) * 256);
-    cudaMemcpy(temp, counter, sizeof(uchar) * 256,cudaMemcpyHostToDevice);
-    cudaMemset(counter, 0, sizeof(uchar) * 256);
+    static int temp[256];
+    int *counter;
+    cudaMalloc(&counter, sizeof(int) * 256);
+    cudaMemcpy(temp, counter, sizeof(int) * 256,cudaMemcpyHostToDevice);
+    cudaMemset(counter, 0, sizeof(int) * 256);
 
     const int N = 2;
     cudaStream_t streams[N];
@@ -50,4 +53,12 @@ void cudaHistogram(cv::Mat & input, cv::Mat & output) {
 
     dim3 blockSize(input.cols / (MAX_THREADS / 2) + 1, input.rows / MAX_THREADS + 1);
     dim3 threadSize(MAX_THREADS / 2, MAX_THREADS);
+
+    histogram <<<blockSize, threadSize>>> (d_input, input.rows, input.rows, in_pitch, d_output, out_pitch, counter);
+    CUDA_CALL(cudaDeviceSynchronize());
+
+    cudaMemcpy2D(output.data, output.cols * sizeof(uchar), d_output, out_pitch, output.cols * sizeof(uchar), output.rows, cudaMemcpyDeviceToHost);
+
+    for (size_t i = 0; i < N; i++)cudaStreamDestroy(streams[i]);
+    cudaFree(d_input); cudaFree(d_output);
 }
