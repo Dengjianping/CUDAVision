@@ -5,34 +5,40 @@
 __constant__ char sobelKernelXC[K_SIZE][K_SIZE] = { { -1.0,0.0,1.0 },{ -2.0,0.0,2.0 },{ -1.0,0.0,1.0 } };
 __constant__ char sobelKernelYC[K_SIZE][K_SIZE] = { { -1.0,-2.0,-1.0 },{ 0.0,0.0,0.0 },{ 1.0,2.0,1.0 } };
 
-__global__ void sobel(uchar *input, int height, int width, size_t inputPitch, uchar *gx, size_t gxPitch, uchar *gy, size_t gyPitch, uchar *output, size_t outputPitch) {
+__global__ void sobel(uchar *input, int height, int width, size_t pitch, char *gx, char *gy, uchar *output) {
     int row = blockDim.y*blockIdx.y + threadIdx.y;
     int col = blockDim.x*blockIdx.x + threadIdx.x;
 
     extern __shared__ uchar localData[];
 
     if (row < height && col < width) {
-        //int globalIndex = threadIdx.y*blockDim.x + threadIdx.x;
-        //int localIndex = row*width + col;
-        //localData[localIndex] = input[globalIndex];
+        // load data to share memory
+        localData[threadIdx.y*blockDim.x+threadIdx.x] = *(uchar*)((char*)input + row*pitch) + col;
         __syncthreads();
+
         // convolving
         for (size_t i = 0; i < K_SIZE; i++)
             for (size_t j = 0; j < K_SIZE; j++) {
-                uchar *inputValue = (uchar*)((char*)input + row*inputPitch) + col;
+                uchar *inputValue = (uchar*)((char*)input + row*pitch) + col;
                 // convolving gx
-                uchar *gxValue = (uchar*)((char*)gx + (row + i - K_SIZE / 2)*gxPitch) + (col + j - K_SIZE / 2);
-                *gxValue += sobelKernelXC[i][j] * (*inputValue);
+                if (row + i - K_SIZE / 2 >= 0 && col + j - K_SIZE / 2 >= 0) {
+                    char *gxValue = (char*)((char*)gx + (row + i - K_SIZE / 2)*pitch) + (col + j - K_SIZE / 2);
+                    *gxValue += sobelKernelXC[i][j] * (*inputValue);
+                    //*gxValue += sobelKernelXC[i][j] * localData[threadIdx.y*blockDim.x + threadIdx.x];
+                    //__syncthreads();
 
-                // convolving gy
-                uchar *gyValue = (uchar*)((char*)gy + (row + i - K_SIZE / 2)*gyPitch) + (col + j - K_SIZE / 2);
-                *gyValue += sobelKernelYC[i][j] * (*inputValue);
+                    // convolving gy
+                    char *gyValue = (char*)((char*)gy + (row + i - K_SIZE / 2)*pitch) + (col + j - K_SIZE / 2);
+                    //*gyValue += sobelKernelYC[i][j] * localData[threadIdx.y*blockDim.x + threadIdx.x];
+                    //__syncthreads();
+                    *gyValue += sobelKernelYC[i][j] * (*inputValue);
+                }
         }
 
-        uchar *gxValue = (uchar*)((char*)gx + row*gxPitch) + col;
-        uchar *gyValue = (uchar*)((char*)gy + row*gyPitch) + col;
-        uchar *outputValue = (uchar*)((char*)output + row*outputPitch) + col;
-        *outputValue = *gxValue + *gyValue;
+        char *gxValue = (char*)((char*)gx + row*pitch) + col;
+        char *gyValue = (char*)((char*)gy + row*pitch) + col;
+        uchar *outputValue = (uchar*)((char*)output + row*pitch) + col;
+        *outputValue = sqrtf(powf((float)*gxValue,2) + powf((float)*gyValue,2));
     }
 }
 
@@ -40,30 +46,26 @@ extern "C"
 void cudaSobel(cv::Mat & input, cv::Mat & output) {
     output = cv::Mat(input.size(), CV_8U, cv::Scalar(0));
 
-    uchar *d_input, *d_output, *gx, *gy;
-    size_t inputPitch, outputPitch, gxPitch, gyPitch;
-    size_t srcPitch = input.step;
-    size_t dstPitch = output.step;
+    uchar *d_input, *d_output; char *gx, *gy;
+    size_t pitch;
 
     cudaStream_t inputStream, outputStream, gxStream, gyStream;
     CUDA_CALL(cudaStreamCreate(&inputStream)); CUDA_CALL(cudaStreamCreate(&outputStream)); CUDA_CALL(cudaStreamCreate(&gxStream)); CUDA_CALL(cudaStreamCreate(&gyStream));
 
-    CUDA_CALL(cudaMallocPitch(&d_input, &inputPitch, sizeof(uchar)*input.cols, input.rows));
-    CUDA_CALL(cudaMallocPitch(&d_output, &outputPitch, sizeof(uchar)*output.cols, output.rows));
-    CUDA_CALL(cudaMallocPitch(&gx, &gxPitch, sizeof(uchar)*output.cols, output.rows));
-    CUDA_CALL(cudaMallocPitch(&gy, &gyPitch, sizeof(uchar)*output.cols, output.rows));
+    CUDA_CALL(cudaMallocPitch(&d_input, &pitch, sizeof(uchar)*input.cols, input.rows));
+    CUDA_CALL(cudaMallocPitch(&d_output, &pitch, sizeof(uchar)*output.cols, output.rows));
+    CUDA_CALL(cudaMallocPitch(&gx, &pitch, sizeof(char)*output.cols, output.rows));
+    CUDA_CALL(cudaMallocPitch(&gy, &pitch, sizeof(char)*output.cols, output.rows));
 
-    std::cout << inputPitch << std::endl;
-
-    CUDA_CALL(cudaMemcpy2DAsync(d_input, srcPitch, input.data, dstPitch, sizeof(uchar)*input.cols, input.rows, cudaMemcpyHostToDevice, inputStream));
-    CUDA_CALL(cudaMemcpy2DAsync(d_output, srcPitch, output.data, dstPitch, sizeof(uchar)*output.cols, output.rows, cudaMemcpyHostToDevice, outputStream));
-    CUDA_CALL(cudaMemcpy2DAsync(gx, srcPitch, output.data, dstPitch, sizeof(uchar)*output.cols, output.rows, cudaMemcpyHostToDevice, gxStream));
-    CUDA_CALL(cudaMemcpy2DAsync(gy, srcPitch, output.data, dstPitch, sizeof(uchar)*output.cols, output.rows, cudaMemcpyHostToDevice, gyStream));
+    CUDA_CALL(cudaMemcpy2DAsync(d_input, pitch, input.data, sizeof(uchar)*input.cols, sizeof(uchar)*input.cols, input.rows, cudaMemcpyHostToDevice, inputStream));
+    CUDA_CALL(cudaMemcpy2DAsync(d_output, pitch, output.data, sizeof(uchar)*output.cols, sizeof(uchar)*output.cols, output.rows, cudaMemcpyHostToDevice, outputStream));
+    CUDA_CALL(cudaMemcpy2DAsync(gx, pitch, output.data, sizeof(char)*output.cols, sizeof(char)*output.cols, output.rows, cudaMemcpyHostToDevice, gxStream));
+    CUDA_CALL(cudaMemcpy2DAsync(gy, pitch, output.data, sizeof(char)*output.cols, sizeof(char)*output.cols, output.rows, cudaMemcpyHostToDevice, gyStream));
 
     CUDA_CALL(cudaStreamSynchronize(inputStream)); CUDA_CALL(cudaStreamSynchronize(outputStream)); CUDA_CALL(cudaStreamSynchronize(gxStream)); CUDA_CALL(cudaStreamSynchronize(gyStream));
 
-    cudaMemset(gx, 0, sizeof(uchar)*output.rows*output.cols);
-    cudaMemset(gy, 0, sizeof(uchar)*output.rows*output.cols);
+    cudaMemset(gx, 0, sizeof(char)*output.rows*output.cols);
+    cudaMemset(gy, 0, sizeof(char)*output.rows*output.cols);
 
     /*
     my sample image size is 600 * 450, so we need 600 * 450 threads to process this image on device at least,
@@ -72,12 +74,12 @@ void cudaSobel(cv::Mat & input, cv::Mat & output) {
     dim3 blockSize(input.cols / (MAX_THREADS/2) + 1, input.rows / MAX_THREADS + 1);
     dim3 threadSize(MAX_THREADS/2, MAX_THREADS);
 
-    size_t sharedSize = blockSize.x*blockSize.y * sizeof(uchar);
-    sobel<<<blockSize, threadSize, sharedSize>>>(d_input, input.rows, input.cols, dstPitch, gx, dstPitch, gy, dstPitch, d_output, dstPitch);
+    size_t shared = threadSize.x*threadSize.y * sizeof(uchar);
+    sobel<<<blockSize, threadSize, shared>>>(d_input, input.rows, input.cols, pitch, gx, gy, d_output);
     CUDA_CALL(cudaDeviceSynchronize());
 
     // get data back
-    CUDA_CALL(cudaMemcpy2D(output.data, sizeof(uchar)*output.cols, d_output, dstPitch, sizeof(uchar)*output.cols, output.rows, cudaMemcpyDeviceToHost));
+    CUDA_CALL(cudaMemcpy2D(output.data, sizeof(uchar)*output.cols, d_output, pitch, sizeof(uchar)*output.cols, output.rows, cudaMemcpyDeviceToHost));
 
     // resource releasing
     cudaFree(d_input); cudaFree(d_output); cudaFree(gx); cudaFree(gy);
