@@ -59,7 +59,7 @@ __device__ float localMaxRepression(int row, int col, int window, float *xx, flo
 }
 
 __global__ void harriscornel(float *d_input, size_t pitch, int heigth, int width, int radius, float theta, 
-                             float k, float repression, int window, float *d_maxR, CornerPoint *d_points,
+                             float k, float repression, int window, int *d_maxR, CornerPoint *d_points,
                              float *lx, float *ly, float *lxy, float *sxx, float *syy, float *sxy, float *d_output) {
     int row = blockDim.y*blockIdx.y + threadIdx.y;
     int col = blockDim.x*blockIdx.x + threadIdx.x;
@@ -121,9 +121,9 @@ __global__ void harriscornel(float *d_input, size_t pitch, int heigth, int width
         float *Sxy = (float*)((char*)sxy + row*pitch) + col;
         float *Syy = (float*)((char*)syy + row*pitch) + col;
         float r = det(Sxx, Sxy, Syy) - k*powf(trace(Sxx, Syy), 2);
-        if (*d_maxR < r)*d_maxR = 100;
-        *d_maxR = 100;
-        __syncthreads();
+        
+        atomicMax(d_maxR, r);
+        printf("\d", *d_maxR);
 
         // core part
         if ((row > window - 1 && row < heigth - window / 2) && (col > window - 1 && col < width - window / 2)) {
@@ -146,8 +146,9 @@ void cudaHarrisCorner(cv::Mat & input, cv::Mat & output, int radius, float theta
     const int N = 8;
     float *d_input, *lx, *ly, *lxy, *sxx, *syy, *sxy, *d_output;
     size_t size = input.rows*input.cols*sizeof(CornerPoint);
-    std::cout << size << std::endl;
     CornerPoint *h_points = new CornerPoint[input.rows*input.cols], *d_points; // record corner points
+
+    cudaMalloc(&d_points, sizeof(CornerPoint)*input.rows*input.cols);
 
     cudaMallocPitch(&d_input, &size, sizeof(float)*input.cols, input.rows);
     cudaMallocPitch(&lx, &size, sizeof(float)*input.cols, input.rows);
@@ -159,22 +160,9 @@ void cudaHarrisCorner(cv::Mat & input, cv::Mat & output, int radius, float theta
     cudaMallocPitch(&d_output, &size, sizeof(float)*input.cols, input.rows);
     
 
-    float *d_maxR, *h_maxR;
-    cudaDeviceProp prop;
-    cudaGetDeviceProperties(&prop, 0);
-    if (!prop.canMapHostMemory) {
-        std::cout << "cannot support map memory" << std::endl;
-        return;
-    }
-    cudaHostAlloc(&h_points, size, cudaHostAllocMapped);
-    cudaHostAlloc(&h_maxR, sizeof(float), cudaHostAllocMapped);
-    /*for (size_t i = 0; i < input.rows*input.cols; i++) {
-        h_points[i] = *(new CornerPoint());
-    }*/
-    *h_maxR = 0;
-    std::cout << h_points[0].x << std::endl;
-    cudaHostGetDevicePointer(&d_points, h_points, 0);
-    cudaHostGetDevicePointer(&d_maxR, h_maxR, 0);
+    int h_maxR, *d_maxR;
+    cudaMalloc(&d_maxR, sizeof(int));
+    cudaMemset(d_maxR, 0, sizeof(int));
 
     cudaStream_t *streams = new cudaStream_t[N];
     for (size_t i = 0; i < N; i++) cudaStreamCreate(&streams[i]);
@@ -193,11 +181,13 @@ void cudaHarrisCorner(cv::Mat & input, cv::Mat & output, int radius, float theta
 
     dim3 blockSize(input.cols / MAX_THREADS + 1, input.rows / MAX_THREADS + 1);
     dim3 threadSize(MAX_THREADS, MAX_THREADS);
-
     
     harriscornel<<<blockSize, threadSize>>> (d_input, pitch, input.rows, input.cols, radius, theta, k, repression, window, d_maxR, d_points, lx, ly, lxy, sxx, syy, sxy, d_output);
-    cudaDeviceSynchronize();
-    std::cout <<  "max r" << *h_maxR << std::endl;
+    CUDA_CALL(cudaDeviceSynchronize());
+
+    cudaMemcpy(&h_maxR, d_maxR, sizeof(int), cudaMemcpyDeviceToHost);
+    cudaMemcpy(h_points, d_points, size, cudaMemcpyDeviceToHost);
+    std::cout << h_maxR << std::endl;
 
     //cudaMemcpy2D(output.data, pitch, d_output, pitch, pitch, input.rows, cudaMemcpyDeviceToHost);
     for (size_t i = 0; i < input.rows; i++) 
@@ -211,7 +201,7 @@ void cudaHarrisCorner(cv::Mat & input, cv::Mat & output, int radius, float theta
         }
     }
         
-    cudaFree(d_input); cudaFree(lx); cudaFree(ly);cudaFree(sxx);cudaFree(syy);cudaFree(sxy); cudaFree(d_input); cudaFree(lxy);
-    cudaFreeHost(h_points);
+    cudaFree(d_input); cudaFree(lx); cudaFree(ly); cudaFree(sxx); cudaFree(syy); cudaFree(sxy); cudaFree(d_input); cudaFree(lxy); cudaFree(d_maxR);
+    cudaFree(d_points);
     for (size_t i = 0; i < N; i++) cudaStreamDestroy(streams[i]);
 }
