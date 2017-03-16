@@ -4,6 +4,7 @@
 // std include files
 #include <iostream>
 #include <string>
+#include <vector>
 #include <cmath>
 #include <cstdlib>
 #include <stdio.h>
@@ -19,6 +20,8 @@
 
 // python include files
 #include <Python.h>
+
+enum Orientation { angel_90, angel_180, angel_270 };
 
 
 #endif // !HEADERS_H

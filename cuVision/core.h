@@ -33,6 +33,18 @@ namespace cucv {
 
     extern "C"
         void cudaCanny(cv::Mat & input, cv::Mat & output, float radius, float theta, int window);
+
+    extern "C"
+        void cudaHistogram(cv::Mat & input, cv::Mat & output);
+
+    extern "C"
+        void cudaIntegral(cv::Mat & input, cv::Mat & output);
+
+    extern "C"
+        void cudaFlip(cv::Mat & input, cv::Mat & output, Orientation ori);
+
+    extern "C"
+        void cudaGray(cv::Mat & input, cv::Mat & output);
 }
 
 #endif // !CORE_H
