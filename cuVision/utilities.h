@@ -21,4 +21,10 @@ namespace utility {
         Py_Finalize();
         return;
     }
+
+    int deviceCount() {
+        int count;
+        cudaGetDeviceCount(&count);
+        return count;
+    }
 }
