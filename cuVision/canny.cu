@@ -113,6 +113,10 @@ __global__ void canny(float *d_input, int height, int width, size_t pitch,
             if (*x ==90.0)*out = maxPixel(row, col, d_input, pitch, window, vertical);
             if (*x == 45.0)*out = maxPixel(row, col, d_input, pitch, window, possquint);
         }
+        
+        // threshold
+        float *out = (float *)((char *)d_output + row*pitch) + col;
+        if (*out > 0.01) *out = 1.0;
     }
 }
 
