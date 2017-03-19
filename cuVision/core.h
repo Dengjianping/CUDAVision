@@ -45,6 +45,9 @@ namespace cucv {
 
     extern "C"
         void cudaGray(cv::Mat & input, cv::Mat & output);
+
+    extern "C"
+        void cudaSplit(cv::Mat & input, std::vector<cv::Mat> & channels);
 }
 
 #endif // !CORE_H
