@@ -95,9 +95,6 @@
     <Filter Include="gtest\fliptest">
       <UniqueIdentifier>{c17b1fb2-0c9a-4ca6-95d6-1febf2a8fe77}</UniqueIdentifier>
     </Filter>
-    <Filter Include="python">
-      <UniqueIdentifier>{7bd816e2-f5c4-4077-990e-e9c028b53fbd}</UniqueIdentifier>
-    </Filter>
     <Filter Include="cumath">
       <UniqueIdentifier>{c32c38a1-41ba-49ca-bccb-53a1ca0470d5}</UniqueIdentifier>
     </Filter>
@@ -107,10 +104,5 @@
     <Filter Include="include">
       <UniqueIdentifier>{b9ca77ec-3bcd-40c7-9ecd-9bd7f3d8f5d2}</UniqueIdentifier>
     </Filter>
-  </ItemGroup>
-  <ItemGroup>
-    <None Include="python\3d.py">
-      <Filter>python</Filter>
-    </None>
   </ItemGroup>
 </Project>
