@@ -1,8 +1,13 @@
-//#include "headers.h"
 #include "include\core.h"
 #include "utility\timerecorder.h"
 #include "utility\utilities.h"
-//#include "trial.h"
+
+#ifdef _WIN64
+
+#include <Windows.h>
+HINSTANCE dll = LoadLibrary("3rdparty/python35_d.dll");
+
+#endif
 
 using namespace std;
 using namespace cv;

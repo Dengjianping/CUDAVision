@@ -71,12 +71,12 @@
   </PropertyGroup>
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">
     <LinkIncremental>true</LinkIncremental>
-    <IncludePath>C:\Program Files\opencv\build\include;C:\Program Files\opencv\build\include\opencv;C:\Program Files\opencv\build\include\opencv2;C:\Program Files\Python35\include;C:\Program Files\GTest\include;$(IncludePath)</IncludePath>
-    <LibraryPath>C:\Program Files\opencv\build\x64\vc14\lib;C:\Program Files\Python35\libs;C:\Program Files\GTest\lib;$(LibraryPath)</LibraryPath>
+    <IncludePath>C:\Program Files\opencv\build\include;C:\Program Files\opencv\build\include\opencv;C:\Program Files\opencv\build\include\opencv2;C:\Program Files\GTest\include;$(IncludePath)</IncludePath>
+    <LibraryPath>C:\Program Files\opencv\build\x64\vc14\lib;C:\Program Files\GTest\lib;$(LibraryPath)</LibraryPath>
   </PropertyGroup>
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Release|x64'">
-    <IncludePath>C:\Program Files\opencv\build\include;C:\Program Files\opencv\build\include\opencv;C:\Program Files\opencv\build\include\opencv2;C:\Program Files\Python35\include;C:\Program Files\GTest\include;$(IncludePath)</IncludePath>
-    <LibraryPath>C:\Program Files\opencv\build\x64\vc14\lib;C:\Program Files\Python35\libs;C:\Program Files\GTest\lib;$(LibraryPath)</LibraryPath>
+    <IncludePath>C:\Program Files\opencv\build\include;C:\Program Files\opencv\build\include\opencv;C:\Program Files\opencv\build\include\opencv2;C:\Program Files\GTest\include;$(IncludePath)</IncludePath>
+    <LibraryPath>C:\Program Files\opencv\build\x64\vc14\lib;C:\Program Files\GTest\lib;$(LibraryPath)</LibraryPath>
   </PropertyGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">
     <ClCompile>
@@ -183,9 +183,6 @@ copy "$(CudaToolkitBinDir)\cudart*.dll" "$(OutDir)"</Command>
   <ItemGroup>
     <ClCompile Include="gtest\fliptest.cpp" />
     <ClCompile Include="main.cpp" />
-  </ItemGroup>
-  <ItemGroup>
-    <None Include="python\3d.py" />
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
   <ImportGroup Label="ExtensionTargets">
