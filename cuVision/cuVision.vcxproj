@@ -71,12 +71,12 @@
   </PropertyGroup>
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">
     <LinkIncremental>true</LinkIncremental>
-    <IncludePath>C:\Program Files\opencv\build\include;C:\Program Files\opencv\build\include\opencv;C:\Program Files\opencv\build\include\opencv2;C:\Program Files\Python35\include;$(IncludePath)</IncludePath>
-    <LibraryPath>C:\Program Files\opencv\build\x64\vc14\lib;C:\Program Files\Python35\libs;$(LibraryPath)</LibraryPath>
+    <IncludePath>C:\Program Files\opencv\build\include;C:\Program Files\opencv\build\include\opencv;C:\Program Files\opencv\build\include\opencv2;C:\Program Files\Python35\include;C:\Program Files\GTest\include;$(IncludePath)</IncludePath>
+    <LibraryPath>C:\Program Files\opencv\build\x64\vc14\lib;C:\Program Files\Python35\libs;C:\Program Files\GTest\lib;$(LibraryPath)</LibraryPath>
   </PropertyGroup>
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Release|x64'">
-    <IncludePath>C:\Program Files\opencv\build\include;C:\Program Files\opencv\build\include\opencv;C:\Program Files\opencv\build\include\opencv2;C:\Program Files\Python35\include;$(IncludePath)</IncludePath>
-    <LibraryPath>C:\Program Files\opencv\build\x64\vc14\lib;C:\Program Files\Python35\libs;$(LibraryPath)</LibraryPath>
+    <IncludePath>C:\Program Files\opencv\build\include;C:\Program Files\opencv\build\include\opencv;C:\Program Files\opencv\build\include\opencv2;C:\Program Files\Python35\include;C:\Program Files\GTest\include;$(IncludePath)</IncludePath>
+    <LibraryPath>C:\Program Files\opencv\build\x64\vc14\lib;C:\Program Files\Python35\libs;C:\Program Files\GTest\lib;$(LibraryPath)</LibraryPath>
   </PropertyGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">
     <ClCompile>
@@ -103,7 +103,8 @@ copy "$(CudaToolkitBinDir)\cudart*.dll" "$(OutDir)"</Command>
     <Link>
       <GenerateDebugInformation>true</GenerateDebugInformation>
       <SubSystem>Console</SubSystem>
-      <AdditionalDependencies>cudart.lib;kernel32.lib;user32.lib;gdi32.lib;winspool.lib;comdlg32.lib;advapi32.lib;shell32.lib;ole32.lib;oleaut32.lib;uuid.lib;odbc32.lib;odbccp32.lib;opencv_world320d.lib;%(AdditionalDependencies)</AdditionalDependencies>
+      <AdditionalDependencies>cudart.lib;kernel32.lib;user32.lib;gdi32.lib;winspool.lib;comdlg32.lib;advapi32.lib;shell32.lib;ole32.lib;oleaut32.lib;uuid.lib;odbc32.lib;odbccp32.lib;opencv_world320d.lib;gtestd.lib;gtest_maind.lib;%(AdditionalDependencies)</AdditionalDependencies>
+      <StackReserveSize>2097152</StackReserveSize>
     </Link>
     <PostBuildEvent>
       <Command>echo copy "$(CudaToolkitBinDir)\cudart*.dll" "$(OutDir)"
@@ -111,7 +112,6 @@ copy "$(CudaToolkitBinDir)\cudart*.dll" "$(OutDir)"</Command>
     </PostBuildEvent>
     <CudaCompile>
       <TargetMachinePlatform>64</TargetMachinePlatform>
-      <AdditionalOptions>--keep %(AdditionalOptions)</AdditionalOptions>
     </CudaCompile>
   </ItemDefinitionGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">
@@ -147,7 +147,7 @@ copy "$(CudaToolkitBinDir)\cudart*.dll" "$(OutDir)"</Command>
       <EnableCOMDATFolding>true</EnableCOMDATFolding>
       <OptimizeReferences>true</OptimizeReferences>
       <SubSystem>Console</SubSystem>
-      <AdditionalDependencies>cudart.lib;kernel32.lib;user32.lib;gdi32.lib;winspool.lib;comdlg32.lib;advapi32.lib;shell32.lib;ole32.lib;oleaut32.lib;uuid.lib;odbc32.lib;odbccp32.lib;opencv_world320.lib;%(AdditionalDependencies)</AdditionalDependencies>
+      <AdditionalDependencies>cudart.lib;kernel32.lib;user32.lib;gdi32.lib;winspool.lib;comdlg32.lib;advapi32.lib;shell32.lib;ole32.lib;oleaut32.lib;uuid.lib;odbc32.lib;odbccp32.lib;opencv_world320.lib;gtest.lib;gtest_main.lib;%(AdditionalDependencies)</AdditionalDependencies>
     </Link>
     <PostBuildEvent>
       <Command>echo copy "$(CudaToolkitBinDir)\cudart*.dll" "$(OutDir)"
@@ -158,30 +158,34 @@ copy "$(CudaToolkitBinDir)\cudart*.dll" "$(OutDir)"</Command>
     </CudaCompile>
   </ItemDefinitionGroup>
   <ItemGroup>
-    <CudaCompile Include="affine.cu" />
-    <CudaCompile Include="dilate.cu" />
-    <CudaCompile Include="erode.cu" />
-    <CudaCompile Include="gaussianblur.cu" />
-    <CudaCompile Include="harriscorner.cu" />
-    <CudaCompile Include="improvement.cu" />
-    <CudaCompile Include="laplacetransform.cu" />
-    <CudaCompile Include="sobel.cu" />
-    <CudaCompile Include="threshold.cu" />
-    <CudaCompile Include="usm.cu" />
+    <CudaCompile Include="blur\gaussianblur.cu" />
+    <CudaCompile Include="canny\canny.cu" />
+    <CudaCompile Include="contrib\colorspace.cu" />
+    <CudaCompile Include="contrib\harriscorner.cu" />
+    <CudaCompile Include="contrib\histogram.cu" />
+    <CudaCompile Include="contrib\integral.cu" />
+    <CudaCompile Include="contrib\laplacetransform.cu" />
+    <CudaCompile Include="contrib\splitchannels.cu" />
+    <CudaCompile Include="contrib\threshold.cu" />
+    <CudaCompile Include="cumath\cumath.cu" />
+    <CudaCompile Include="sobel\sobel.cu" />
+    <CudaCompile Include="transform\affine.cu" />
+    <CudaCompile Include="transform\flip.cu" />
+    <CudaCompile Include="usm\usm.cu" />
   </ItemGroup>
   <ItemGroup>
-    <ClInclude Include="cumath.cuh" />
-    <ClInclude Include="headers.h" />
-    <ClInclude Include="core.h" />
-    <ClInclude Include="timerecorder.h" />
-    <ClInclude Include="utilities.h" />
+    <ClInclude Include="cumath\cumath.cuh" />
+    <ClInclude Include="include\core.h" />
+    <ClInclude Include="include\headers.h" />
+    <ClInclude Include="utility\timerecorder.h" />
+    <ClInclude Include="utility\utilities.h" />
   </ItemGroup>
   <ItemGroup>
+    <ClCompile Include="gtest\fliptest.cpp" />
     <ClCompile Include="main.cpp" />
-    <ClCompile Include="trial.h" />
   </ItemGroup>
   <ItemGroup>
-    <None Include="3d.py" />
+    <None Include="python\3d.py" />
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
   <ImportGroup Label="ExtensionTargets">
