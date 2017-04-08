@@ -20,9 +20,6 @@
 #include <opencv2/highgui.hpp>
 #include <opencv2/imgproc.hpp>
 
-// python include files
-#include <Python.h>
-
 enum Orientation { angel_90, angel_180, angel_270 };
 
 
