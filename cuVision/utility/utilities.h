@@ -7,7 +7,7 @@ namespace utility {
         cv::imshow(title, img);
     }
 
-    void callPython() {
+    /*void callPython() {
         Py_Initialize();
 
         PyObject *pyModule = NULL;
@@ -20,7 +20,7 @@ namespace utility {
 
         Py_Finalize();
         return;
-    }
+    }*/
 
     int deviceCount() {
         int count;
