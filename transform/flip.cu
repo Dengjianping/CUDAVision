@@ -65,7 +65,7 @@ void cudaFlip(cv::Mat & input, cv::Mat & output, Orientation ori)
     // bind texture
     CUDA_CALL(cudaBindTexture2D(NULL, &text2D, d_input, &desc, input.cols, input.rows, in_pitch));
 
-    dim3 threadSize(32, 6);
+    dim3 threadSize(32, 32);
     dim3 blockSize(input.cols / threadSize.x + 1, input.rows / threadSize.y + 1);
     
     switch (ori)
