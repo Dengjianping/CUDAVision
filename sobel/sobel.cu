@@ -1,71 +1,93 @@
+/*
+    sobel operation just uses a sobel operator to convolve a target matrix, so the key to improve performance
+    is how to tune the convolution. well, either you can write your own convolution algorithm or use cufft lib.
+    1. naive convolution algorithm. refer to this link: https://www.evl.uic.edu/sjames/cs525/final.html
+    2. cufft. This is a fine tuned algorithm, a little complicated to apply FFT to convolution.
+       a. Apply API cufftExecR2C to kernel and taregt matrix;
+       b. mulplication both FFTed kernel and target matrix;
+       c. Inverse the result from step b.
+       d. 
+*/
+
 #include "..\cumath\cumath.cuh"
 
 #define K_SIZE 3
-#define TILE_H 4
-#define TILE_W 30
+#define TILE_H 32
+#define TILE_W 32
+#define RADIUS 8
 #define LOOP_UNROLLING
 
 __constant__ int sobelKernelXC[K_SIZE][K_SIZE] = { { -1,0,1 },{ -2,0,2 },{ -1,0,1 } };
 __constant__ int sobelKernelYC[K_SIZE][K_SIZE] = { { -1,-2,-1 },{ 0,0,0 },{ 1,2,1 } };
 
-__global__ void sobel(int *input, int height, int width, int radius, int tile_h, int tile_w, size_t pitch, int *output)
+__global__ void sobelRow(int *input, int height, int width, int radius, size_t pitch, int *output)
 {
     int row = blockIdx.y*blockDim.y + threadIdx.y;
     int col = blockIdx.x*blockDim.x + threadIdx.x;
 
-    __shared__ int localData[TILE_H + K_SIZE - 1][TILE_W + K_SIZE - 1];
-    if (row < height && col < width) {
-        if (row - radius < 0 || col - radius < 0) 
-        {
-            localData[threadIdx.y][threadIdx.x] = 0;
-        }
+    __shared__ int shared[TILE_H][TILE_W];
+    if (row < height && col < width)
+    {
+        /*
+        actually, there will be some branch divergence when thread face if-else statement, which will affect the performance.
+        */
+        // upper left corner in the block
+        if (row - RADIUS < 0 || col - RADIUS < 0)
+            shared[threadIdx.y][threadIdx.x] = 0;
         else
-        {
-            localData[threadIdx.y][threadIdx.x] = *((float*)((char*)input + (blockIdx.y*TILE_H + threadIdx.y - radius)*pitch) + (blockIdx.x*TILE_W + threadIdx.x - radius));
-            //localData[threadIdx.y][threadIdx.x] = *((float*)((char*)input + (row - radius)*pitch) + (col - radius));
-        }
-        if (row > height - radius - 1 || col > width - radius - 1)
-        {
-            localData[threadIdx.y][threadIdx.x] = 0;
-        }
+            shared[threadIdx.y][threadIdx.x] = *((int*)((char*)input + (row - RADIUS) * pitch) + (col - RADIUS));
+
+        // upper right
+        if (row - RADIUS < 0 || col + RADIUS > width - 1)
+            shared[threadIdx.y][threadIdx.x + blockDim.x] = 0;
+        else
+            shared[threadIdx.y][threadIdx.x + blockDim.x] = *((int*)((char*)input + (row - RADIUS) * pitch) + (col + RADIUS));
+
+        //bottom left
+        if (row + RADIUS > height - 1 || col - RADIUS < 0)
+            shared[threadIdx.y + blockDim.y][threadIdx.x] = 0;
+        else
+            shared[threadIdx.y + blockDim.y][threadIdx.x] = *((int*)((char*)input + (row + RADIUS) * pitch) + (col - RADIUS));
+
+        // bottom right
+        if (row + RADIUS > height - 1 || col - RADIUS > width - 1)
+            shared[threadIdx.y + blockDim.y][threadIdx.x + blockDim.x] = 0;
+        else
+            shared[threadIdx.y + blockDim.y][threadIdx.x + blockDim.x] = *((int*)((char*)input + (row + RADIUS) * pitch) + (col + RADIUS));
         __syncthreads();
-        
-        if ((threadIdx.y >= radius && threadIdx.y <= blockDim.y - radius - 1) && (threadIdx.x >= radius && threadIdx.x <= blockDim.x - radius - 1)) 
-        {
-            int sumx = 0, sumy = 0;
+
+        int sumx = 0, sumy = 0;
 #ifdef LOOP_UNROLLING
-            // use loop unrolling to improve performance, it can avoid branching.
-            sumx = sobelKernelXC[radius - 1][radius - 1] * localData[threadIdx.y - 1][threadIdx.x - 1] +
-                   sobelKernelXC[radius - 1][radius] * localData[threadIdx.y - 1][threadIdx.x] +
-                   sobelKernelXC[radius - 1][radius + 1] * localData[threadIdx.y - 1][threadIdx.x + 1] +
-                   sobelKernelXC[radius][radius - 1] * localData[threadIdx.y][threadIdx.x - 1] +
-                   sobelKernelXC[radius][radius] * localData[threadIdx.y][threadIdx.x] +
-                   sobelKernelXC[radius][radius + 1] * localData[threadIdx.y][threadIdx.x + 1] +
-                   sobelKernelXC[radius + 1][radius - 1] * localData[threadIdx.y + 1][threadIdx.x - 1] +
-                   sobelKernelXC[radius + 1][radius] * localData[threadIdx.y + 1][threadIdx.x] +
-                   sobelKernelXC[radius + 1][radius + 1] * localData[threadIdx.y + 1][threadIdx.x + 1];
-            sumy = sobelKernelXC[radius - 1][radius - 1] * localData[threadIdx.y - 1][threadIdx.x - 1] +
-                   sobelKernelYC[radius - 1][radius] * localData[threadIdx.y - 1][threadIdx.x] +
-                   sobelKernelYC[radius - 1][radius + 1] * localData[threadIdx.y - 1][threadIdx.x + 1] +
-                   sobelKernelYC[radius][radius - 1] * localData[threadIdx.y][threadIdx.x - 1] +
-                   sobelKernelYC[radius][radius] * localData[threadIdx.y][threadIdx.x] +
-                   sobelKernelYC[radius][radius + 1] * localData[threadIdx.y][threadIdx.x + 1] +
-                   sobelKernelYC[radius + 1][radius - 1] * localData[threadIdx.y + 1][threadIdx.x - 1] +
-                   sobelKernelYC[radius + 1][radius] * localData[threadIdx.y + 1][threadIdx.x] +
-                   sobelKernelYC[radius + 1][radius + 1] * localData[threadIdx.y + 1][threadIdx.x + 1];
+        // use loop unrolling to improve performance, it can avoid branching.
+        sumx = sobelKernelXC[radius - 1][radius - 1] * shared[threadIdx.y + RADIUS - 1][threadIdx.x + RADIUS - 1] +
+            sobelKernelXC[radius - 1][radius] * shared[threadIdx.y + RADIUS - 1][threadIdx.x + RADIUS] +
+            sobelKernelXC[radius - 1][radius + 1] * shared[threadIdx.y + RADIUS - 1][threadIdx.x + RADIUS + 1] +
+            sobelKernelXC[radius][radius - 1] * shared[threadIdx.y + RADIUS][threadIdx.x + RADIUS - 1] +
+            sobelKernelXC[radius][radius] * shared[threadIdx.y + RADIUS][threadIdx.x + RADIUS] +
+            sobelKernelXC[radius][radius + 1] * shared[threadIdx.y + RADIUS][threadIdx.x + RADIUS + 1] +
+            sobelKernelXC[radius + 1][radius - 1] * shared[threadIdx.y + RADIUS + 1][threadIdx.x + RADIUS - 1] +
+            sobelKernelXC[radius + 1][radius] * shared[threadIdx.y + RADIUS + 1][threadIdx.x + RADIUS] +
+            sobelKernelXC[radius + 1][radius + 1] * shared[threadIdx.y + RADIUS + 1][threadIdx.x + RADIUS + 1];
+        sumy = sobelKernelXC[radius - 1][radius - 1] * shared[threadIdx.y + RADIUS - 1][threadIdx.x + RADIUS - 1] +
+            sobelKernelYC[radius - 1][radius] * shared[threadIdx.y + RADIUS - 1][threadIdx.x + RADIUS] +
+            sobelKernelYC[radius - 1][radius + 1] * shared[threadIdx.y + RADIUS - 1][threadIdx.x + RADIUS + 1] +
+            sobelKernelYC[radius][radius - 1] * shared[threadIdx.y + RADIUS][threadIdx.x + RADIUS - 1] +
+            sobelKernelYC[radius][radius] * shared[threadIdx.y + RADIUS][threadIdx.x + RADIUS] +
+            sobelKernelYC[radius][radius + 1] * shared[threadIdx.y + RADIUS][threadIdx.x + RADIUS + 1] +
+            sobelKernelYC[radius + 1][radius - 1] * shared[threadIdx.y + RADIUS + 1][threadIdx.x + RADIUS - 1] +
+            sobelKernelYC[radius + 1][radius] * shared[threadIdx.y + RADIUS + 1][threadIdx.x + RADIUS] +
+            sobelKernelYC[radius + 1][radius + 1] * shared[threadIdx.y + RADIUS + 1][threadIdx.x + RADIUS + 1];
 #else
-            for (int i = -radius; i <= radius; i++)
-                for (int j = -radius; j <= radius; j++)
-                {
-                    sumx += sobelKernelXC[radius + i][radius + j] * localData[threadIdx.y - i][threadIdx.x - j];
-                    sumy += sobelKernelYC[radius + i][radius + j] * localData[threadIdx.y - i][threadIdx.x - j];
-                }
+        for (int i = -radius; i <= radius; i++)
+            for (int j = -radius; j <= radius; j++)
+            {
+                sumx += sobelKernelXC[radius + i][radius + j] * shared[threadIdx.y + RADIUS- i][threadIdx.x + RADIUS - j];
+                sumy += sobelKernelYC[radius + i][radius + j] * shared[threadIdx.y + RADIUS- i][threadIdx.x + RADIUS - j];
+            }
 #endif
-            __syncthreads(); // wait current thread job done
-            //int *out = (int*)((char*)output + (blockIdx.y*TILE_H + threadIdx.y - radius)*pitch) + (blockIdx.x*TILE_W + threadIdx.x - radius);
-            int *out = (int*)((char*)output + (row - radius)*pitch) + (col - radius);
-            *out = sqrtf(powf(sumx, 2) + powf(sumy, 2));
-        }
+        //__syncthreads(); // wait current thread job done
+        int *out = (int*)((char*)output + row*pitch) + col;
+        *out = sqrtf(powf(sumx, 2) + powf(sumy, 2));
     }
 }
 
@@ -87,11 +109,10 @@ void cudaSobel(cv::Mat & input, cv::Mat & output)
     CUDA_CALL(cudaMemcpy2DAsync(d_input, pitch, input.data, sizeof(int)*input.cols, sizeof(int)*input.cols, input.rows, cudaMemcpyHostToDevice, inputStream));
     CUDA_CALL(cudaMemcpy2DAsync(d_output, pitch, output.data, sizeof(int)*output.cols, sizeof(int)*output.cols, output.rows, cudaMemcpyHostToDevice, outputStream));
 
-    dim3 threadSize(32, 6);
-    dim3 blockSize(input.cols / TILE_W + 1, input.rows / TILE_H + 1);
+    dim3 threadSize(16, 16);
+    dim3 blockSize(input.cols / threadSize.x + 1, input.rows / threadSize.y + 1);
 
-    size_t shared = threadSize.x*threadSize.y * sizeof(int);
-    sobel<<<blockSize, threadSize>>>(d_input, blockSize.y*threadSize.y, blockSize.x*threadSize.x, 1, 4, 30, pitch, d_output);
+    sobelRow<<<blockSize, threadSize>>>(d_input, input.rows, input.cols, 1, pitch, d_output);
     CUDA_CALL(cudaDeviceSynchronize());
 
     // get data back
