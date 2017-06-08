@@ -15,45 +15,45 @@
 #define TILE_H 32
 #define TILE_W 32
 #define RADIUS 8
-#define LOOP_UNROLLING
+//#define LOOP_UNROLLING
 
 __constant__ int sobelKernelXC[K_SIZE][K_SIZE] = { { -1,0,1 },{ -2,0,2 },{ -1,0,1 } };
 __constant__ int sobelKernelYC[K_SIZE][K_SIZE] = { { -1,-2,-1 },{ 0,0,0 },{ 1,2,1 } };
 
-__global__ void sobelRow(int *input, int height, int width, int radius, size_t pitch, int *output)
+__global__ void sobel(int *input, int height, int width, int radius, int R, size_t pitch, int *output)
 {
     int row = blockIdx.y*blockDim.y + threadIdx.y;
     int col = blockIdx.x*blockDim.x + threadIdx.x;
 
-    __shared__ int shared[TILE_H][TILE_W];
+    __shared__ int shared[TILE_H][TILE_W+16]; // add extra 16 columns to eliminate bank confict, because there is 2-way bank conflict if define share memory like __shared__ int shared[TILE_H][TILE_W]
     if (row < height && col < width)
     {
         /*
         actually, there will be some branch divergence when thread face if-else statement, which will affect the performance.
         */
         // upper left corner in the block
-        if (row - RADIUS < 0 || col - RADIUS < 0)
+        if (row - R < 0 || col - R < 0)
             shared[threadIdx.y][threadIdx.x] = 0;
         else
-            shared[threadIdx.y][threadIdx.x] = *((int*)((char*)input + (row - RADIUS) * pitch) + (col - RADIUS));
+            shared[threadIdx.y][threadIdx.x] = *((int*)((char*)input + (row - R) * pitch) + (col - R));
 
         // upper right
-        if (row - RADIUS < 0 || col + RADIUS > width - 1)
+        if (row - R < 0 || col + R > width - 1)
             shared[threadIdx.y][threadIdx.x + blockDim.x] = 0;
         else
-            shared[threadIdx.y][threadIdx.x + blockDim.x] = *((int*)((char*)input + (row - RADIUS) * pitch) + (col + RADIUS));
+            shared[threadIdx.y][threadIdx.x + blockDim.x] = *((int*)((char*)input + (row - R) * pitch) + (col + R));
 
         //bottom left
-        if (row + RADIUS > height - 1 || col - RADIUS < 0)
+        if (row + R > height - 1 || col - R < 0)
             shared[threadIdx.y + blockDim.y][threadIdx.x] = 0;
         else
-            shared[threadIdx.y + blockDim.y][threadIdx.x] = *((int*)((char*)input + (row + RADIUS) * pitch) + (col - RADIUS));
+            shared[threadIdx.y + blockDim.y][threadIdx.x] = *((int*)((char*)input + (row + R) * pitch) + (col - R));
 
         // bottom right
-        if (row + RADIUS > height - 1 || col - RADIUS > width - 1)
+        if (row + R > height - 1 || col - R > width - 1)
             shared[threadIdx.y + blockDim.y][threadIdx.x + blockDim.x] = 0;
         else
-            shared[threadIdx.y + blockDim.y][threadIdx.x + blockDim.x] = *((int*)((char*)input + (row + RADIUS) * pitch) + (col + RADIUS));
+            shared[threadIdx.y + blockDim.y][threadIdx.x + blockDim.x] = *((int*)((char*)input + (row + R) * pitch) + (col + R));
         __syncthreads();
 
         int sumx = 0, sumy = 0;
@@ -81,8 +81,8 @@ __global__ void sobelRow(int *input, int height, int width, int radius, size_t p
         for (int i = -radius; i <= radius; i++)
             for (int j = -radius; j <= radius; j++)
             {
-                sumx += sobelKernelXC[radius + i][radius + j] * shared[threadIdx.y + RADIUS- i][threadIdx.x + RADIUS - j];
-                sumy += sobelKernelYC[radius + i][radius + j] * shared[threadIdx.y + RADIUS- i][threadIdx.x + RADIUS - j];
+                sumx += sobelKernelXC[radius + i][radius + j] * shared[threadIdx.y + R - i][threadIdx.x + R - j];
+                sumy += sobelKernelYC[radius + i][radius + j] * shared[threadIdx.y + R - i][threadIdx.x + R - j];
             }
 #endif
         //__syncthreads(); // wait current thread job done
@@ -110,9 +110,9 @@ void cudaSobel(cv::Mat & input, cv::Mat & output)
     CUDA_CALL(cudaMemcpy2DAsync(d_output, pitch, output.data, sizeof(int)*output.cols, sizeof(int)*output.cols, output.rows, cudaMemcpyHostToDevice, outputStream));
 
     dim3 threadSize(16, 16);
-    dim3 blockSize(input.cols / threadSize.x + 1, input.rows / threadSize.y + 1);
+    dim3 blockSize(input.cols / threadSize.x, input.rows / threadSize.y);
 
-    sobelRow<<<blockSize, threadSize>>>(d_input, input.rows, input.cols, 1, pitch, d_output);
+    sobel<<<blockSize, threadSize>>>(d_input, input.rows, input.cols, 1, 8, pitch, d_output);
     CUDA_CALL(cudaDeviceSynchronize());
 
     // get data back
