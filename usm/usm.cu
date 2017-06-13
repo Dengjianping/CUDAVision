@@ -1,80 +1,82 @@
 #include "..\cumath\cumath.cuh"
 
-#define K_SIZE 3
-#define FACTOR 0.5
+struct __align__(16) float3_aligned { float x, y, z; };
 
-__constant__ float P = 3.1415;
-
-__global__ void usmcolor(float3 *d_input, size_t inputPitch, int imageRows, int imageCols, float3 *blurred, size_t blurredPitch, float3 *d_output, size_t outputPitch, int radius, float theta, float weight) {
+__global__ void usmcolor(float3_aligned *d_input, // target data
+                         size_t pitch, // width allocated by cudaMallocPitch
+                         int height, int width, // image rows and cols
+                         float3_aligned *d_output, // output
+                         int radius, float theta, float weight) 
+{
     int row = blockDim.y*blockIdx.y + threadIdx.y;
     int col = blockDim.x*blockIdx.x + threadIdx.x;
 
     extern __shared__ float gaussianKernel[];
-
-    if (row < imageRows&&col < imageCols) {
-        float3 *inputPixel = (float3*)((char*)d_input + row*inputPitch) + col;
+    __shared__ float shared_pixels[6*3][32];
+    if (row < height && col < width) 
+    {
+        float3_aligned inputPixel = *((float3_aligned*)((char*)d_input + row*pitch) + col);
+        // use share memory to fix global memory coalescing
+        shared_pixels[threadIdx.y][threadIdx.x] = inputPixel.x;
+        shared_pixels[threadIdx.y + 6][threadIdx.x] = inputPixel.y;
+        shared_pixels[threadIdx.y + 12][threadIdx.x] = inputPixel.z;
 
         // gaussian kernel
-        if (row < 2 * radius + 1 && col < 2 * radius + 1) {
-            gaussianKernel[row*(2 * radius + 1) + col] = twoDimGaussian(col - radius, radius - row, theta);
-            __syncthreads();
-        }
+        if (threadIdx.x < 2 * radius + 1 && threadIdx.y < 2 * radius + 1)
+            gaussianKernel[threadIdx.y*(2 * radius + 1) + threadIdx.x] = twoDimGaussian(col - radius, radius - row, theta);
+        __syncthreads();
 
         // get gaussian blurring data, convolving
-        for (size_t i = 0; i < 2 * radius + 1; i++)
-            for (size_t j = 0; j < 2 * radius + 1; j++) {
-                float3 *blurredPixel = (float3*)((char*)blurred + (row + i - radius)*blurredPitch) + (col + j - radius);
-
-                blurredPixel->x += gaussianKernel[i*(2 * radius + 1) + j] * inputPixel->x; // r channel
-                blurredPixel->y += gaussianKernel[i*(2 * radius + 1) + j] * inputPixel->y; // g channel
-                blurredPixel->z += gaussianKernel[i*(2 * radius + 1) + j] * inputPixel->z; // b channel
+        float3_aligned blurredPixel = { 0,0,0 };
+        for (int i = -radius; i <= radius; i++)
+            for (int j = -radius; j <= radius; j++) 
+            {
+                blurredPixel.x += gaussianKernel[(radius + i)*(2 * radius + 1) + (radius + j)] * shared_pixels[threadIdx.y][threadIdx.x]; // r channel
+                blurredPixel.y += gaussianKernel[(radius + i)*(2 * radius + 1) + (radius + j)] * shared_pixels[threadIdx.y + 6][threadIdx.x]; // g channel
+                blurredPixel.z += gaussianKernel[(radius + i)*(2 * radius + 1) + (radius + j)] * shared_pixels[threadIdx.y + 12][threadIdx.x]; // b channel
             }
 
-        float3 *outputPixel = (float3*)((char*)d_output + row*outputPitch) + col;
-        float3 *sblurredPixel = (float3*)((char*)blurred + row*blurredPitch) + col;
-
-        outputPixel->x = (inputPixel->x - weight*sblurredPixel->x) / (1.0 - weight); // r channel
-        outputPixel->y = (inputPixel->y - weight*sblurredPixel->y) / (1.0 - weight); // g channel
-        outputPixel->z = (inputPixel->z - weight*sblurredPixel->z) / (1.0 - weight); // b channel
+        float3_aligned *outputPixel = (float3_aligned*)((char*)d_output + row*pitch) + col;
+        outputPixel->x = (shared_pixels[threadIdx.y][threadIdx.x] - weight*blurredPixel.x) / (1.0 - weight); // r channel
+        outputPixel->y = (shared_pixels[threadIdx.y + 6][threadIdx.x] - weight*blurredPixel.y) / (1.0 - weight); // g channel
+        outputPixel->z = (shared_pixels[threadIdx.y + 12][threadIdx.x] - weight*blurredPixel.z) / (1.0 - weight); // b channel
     }
 }
 
 extern "C"
-void cudaUSMColor(cv::Mat & input, cv::Mat & output, int radius, float theta = 1.0, float weight = 0.6) {
+void cudaUSMColor(cv::Mat & input, cv::Mat & output, int radius, float theta = 1.0, float weight = 0.6) 
+{
+    if (input.channels() != 3)
+    {
+        std::cout << "this image is not a 3-ch image" << std::endl;
+        return;
+    }
+
     input.convertTo(input, CV_32FC3);
     output = cv::Mat(input.size(), input.type(), cv::Scalar(0, 0, 0));
 
-    //dim3 blockSize(2 * (input.cols / MAX_THREADS + 1), input.rows / MAX_THREADS + 1);
-    dim3 threadSize(MAX_THREADS / 2, MAX_THREADS, 1);
-    //dim3 blockSize(input.cols / MAX_THREADS + 1, input.rows / MAX_THREADS + 1);
-    dim3 blockSize(ceil((float)input.cols / threadSize.x), ceil((float)input.rows / threadSize.y), 1);
+    dim3 threadSize(32, 6);
+    dim3 blockSize(input.cols / threadSize.x + 1, input.rows / threadSize.y + 1);
 
+    float3_aligned *d_input, *d_output;
+    size_t pitch;
+    cudaStream_t inputStream, outputStream;
 
-    float3 *d_input, *d_blurred, *d_output;
-    size_t inputPitch, blurredPitch, outputPitch;
-    cudaStream_t inputStream, blurredStream, outputStream;
+    CUDA_CALL(cudaMallocPitch(&d_input, &pitch, sizeof(float3_aligned)*input.cols, input.rows));
+    CUDA_CALL(cudaMallocPitch(&d_output, &pitch, sizeof(float3_aligned)*output.cols, output.rows));
 
-    CUDA_CALL(cudaMallocPitch(&d_input, &inputPitch, sizeof(float3)*input.cols, input.rows));
-    CUDA_CALL(cudaMallocPitch(&d_blurred, &blurredPitch, sizeof(float3)*input.cols, input.rows));
-    CUDA_CALL(cudaMallocPitch(&d_output, &outputPitch, sizeof(float3)*output.cols, output.rows));
-
-    CUDA_CALL(cudaStreamCreate(&inputStream)); CUDA_CALL(cudaStreamCreate(&blurredStream)); CUDA_CALL(cudaStreamCreate(&outputStream));
-
-    CUDA_CALL((cudaMemcpy2DAsync(d_input, inputPitch, input.data, sizeof(float3)*input.cols, sizeof(float3)*input.cols, input.rows, cudaMemcpyHostToDevice, inputStream)));
-    CUDA_CALL((cudaMemcpy2DAsync(d_blurred, blurredPitch, output.data, sizeof(float3)*output.cols, sizeof(float3)*output.cols, output.rows, cudaMemcpyHostToDevice, blurredStream)));
-    CUDA_CALL((cudaMemcpy2DAsync(d_output, outputPitch, output.data, sizeof(float3)*output.cols, sizeof(float3)*output.cols, output.rows, cudaMemcpyHostToDevice, outputStream)));
-
-    CUDA_CALL(cudaStreamSynchronize(inputStream)); CUDA_CALL(cudaStreamSynchronize(blurredStream)); CUDA_CALL(cudaStreamSynchronize(outputStream));
+    CUDA_CALL(cudaStreamCreate(&inputStream)); CUDA_CALL(cudaStreamCreate(&outputStream));
+    CUDA_CALL((cudaMemcpy2DAsync(d_input, pitch, input.data, sizeof(float3)*input.cols, sizeof(float3)*input.cols, input.rows, cudaMemcpyHostToDevice, inputStream)));
+    CUDA_CALL((cudaMemcpy2DAsync(d_output, pitch, output.data, sizeof(float3)*output.cols, sizeof(float3)*output.cols, output.rows, cudaMemcpyHostToDevice, outputStream)));
 
     int dynamicSize = (2 * radius + 1)*(2 * radius + 1) * sizeof(float);
-    usmcolor << <blockSize, threadSize, dynamicSize >> > (d_input, inputPitch, input.rows, input.cols, d_blurred, blurredPitch, d_output, outputPitch, radius, theta, weight);
-
+    usmcolor<<<blockSize, threadSize, dynamicSize>>> (d_input, pitch, input.rows, input.cols, d_output, radius, theta, weight);
     CUDA_CALL(cudaDeviceSynchronize());
 
-    CUDA_CALL(cudaMemcpy2D(output.data, sizeof(float3)*output.cols, d_output, outputPitch, sizeof(float3)*output.cols, output.rows, cudaMemcpyDeviceToHost));
+    CUDA_CALL(cudaMemcpy2D(output.data, sizeof(float3)*output.cols, d_output, pitch, sizeof(float3)*output.cols, output.rows, cudaMemcpyDeviceToHost));
 
-    cudaStreamDestroy(inputStream); cudaStreamDestroy(blurredStream); cudaStreamDestroy(outputStream);
-    cudaFree(d_input); cudaFree(d_output); cudaFree(d_blurred);
+    cudaStreamDestroy(inputStream); cudaStreamDestroy(outputStream);
+    cudaFree(d_input); cudaFree(d_output);
 
     output.convertTo(output, CV_8UC3);
     input.convertTo(input, CV_8UC3);
