@@ -1,69 +1,87 @@
 #include "..\include\headers.h"
 
-class DeviceTimeRecorder {
+class TimeRecorder
+{
+public:
+    virtual void startRecord() = 0;
+    virtual void stopRecord() = 0;
+    virtual float timeCost() = 0;
+};
+
+class DeviceTimeRecorder: public TimeRecorder
+{
 private:
     cudaEvent_t start, end;
 public:
     DeviceTimeRecorder();
-    void startRecord();
-    void stopRecord();
-    float timeCost(); // ms
+    virtual void startRecord();
+    virtual void stopRecord();
+    virtual float timeCost(); // ms
     ~DeviceTimeRecorder();
 };
 
-DeviceTimeRecorder::DeviceTimeRecorder() {
+DeviceTimeRecorder::DeviceTimeRecorder() 
+{
     cudaEventCreate(&start);
     cudaEventCreate(&end);
 }
 
-void DeviceTimeRecorder::startRecord() {
+void DeviceTimeRecorder::startRecord() 
+{
     cudaEventRecord(start);
 }
 
-void DeviceTimeRecorder::stopRecord() {
+void DeviceTimeRecorder::stopRecord() 
+{
     cudaEventRecord(end);
     cudaEventSynchronize(start);
     cudaEventSynchronize(end);
 }
 
-float DeviceTimeRecorder::timeCost() {
+float DeviceTimeRecorder::timeCost() 
+{
     float time;
     cudaEventElapsedTime(&time, start, end);
     return time;
 }
 
-DeviceTimeRecorder::~DeviceTimeRecorder() {
+DeviceTimeRecorder::~DeviceTimeRecorder() 
+{
     cudaEventDestroy(start);
     cudaEventDestroy(end);
 }
 
-class HostTimeRecorder {
+class HostTimeRecorder: public TimeRecorder
+{
 private:
     double start, end;
 public:
     HostTimeRecorder();
-    void startRecord();
-    void stopRecord();
-    double timeCost();
+    virtual void startRecord();
+    virtual void stopRecord();
+    virtual float timeCost();
     ~HostTimeRecorder();
 };
 
-HostTimeRecorder::HostTimeRecorder() {
+HostTimeRecorder::HostTimeRecorder() 
+{
     start = end = 0.0;
 }
 
-void HostTimeRecorder::startRecord() {
-    start = (double)cv::getTickCount();
+void HostTimeRecorder::startRecord() 
+{
+    start = (float)cv::getTickCount();
 }
 
-void HostTimeRecorder::stopRecord() {
-    end = (double)cv::getTickCount();
+void HostTimeRecorder::stopRecord() 
+{
+    end = (float)cv::getTickCount();
 }
 
-double HostTimeRecorder::timeCost() {
+float HostTimeRecorder::timeCost() 
+{
     return (end - start) / cv::getTickFrequency() * 1000; // ms
 }
 
-HostTimeRecorder::~HostTimeRecorder() {
-
-}
+HostTimeRecorder::~HostTimeRecorder() 
+{}
